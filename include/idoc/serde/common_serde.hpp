@@ -7,6 +7,7 @@
 // neither block's serde duplicates the other's encoding logic, and a
 // future wire-shape change only needs updating in one place.
 
+#include "idoc/model/content_ref.hpp"   // ContentType, ContentRef
 #include "idoc/model/numbering.hpp"  // RestartRule
 #include "idoc/model/paragraph.hpp" // Alignment, Indent, Spacing, RunProperties
 #include "idoc/model/sections.hpp"  // Size2D
@@ -42,6 +43,18 @@ model::RunProperties decode_run_properties(const std::vector<uint8_t>& payload);
 // §7's numbering restart" per the spec).
 std::vector<uint8_t> encode_restart_rule(const model::RestartRule& rr);
 model::RestartRule decode_restart_rule(const std::vector<uint8_t>& payload);
+
+// The Block[] reference format -- see model/content_ref.hpp. Used by
+// Section.content, HeaderFooterContent.content, Cell.content,
+// Note.content, Comment.content, and PageGeometry.content_block_refs.
+// encode_content_refs/decode_content_refs handle the whole ordered list
+// as a single self-delimiting TLV payload (a sequence of ref records);
+// callers wrap that payload in their own field's TLV record as usual.
+std::vector<uint8_t> encode_content_ref(const model::ContentRef& ref);
+model::ContentRef decode_content_ref(const std::vector<uint8_t>& payload);
+
+std::vector<uint8_t> encode_content_refs(const std::vector<model::ContentRef>& refs);
+std::vector<model::ContentRef> decode_content_refs(const std::vector<uint8_t>& payload);
 
 } // namespace idoc::serde::common
 

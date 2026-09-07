@@ -17,13 +17,12 @@
 // own records rather than buried inside a monolithic Sections blob --
 // editing one paragraph shouldn't require rewriting every Section.
 //
-// What this means going forward: `Section.content_raw` (reserved since
-// the Sections stage) will eventually hold an ordered list of
-// {content_type, content_id} references into this block (and into
-// Tables, §9, once that exists) rather than embedded objects. That
-// wiring is NOT built yet -- Section.content_raw stays an opaque
-// reserved blob until that connection is made. Flagging this now so it
-// doesn't get silently decided one way in a future stage.
+// What this means going forward: `Section.content` (and
+// Cell.content/Note.content/Comment.content/
+// PageGeometry.content_block_refs) now hold an ordered list of
+// `ContentRef` values (see model/content_ref.hpp) pointing into this
+// block by paragraph_id -- that reference format has been decided and
+// implemented; see model/content_ref.hpp for the full reasoning.
 
 #include "idoc/model/paragraph.hpp"
 

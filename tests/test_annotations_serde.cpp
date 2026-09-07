@@ -7,7 +7,7 @@ using namespace idoc;
 TEST_CASE("annotations serde: footnote and endnote round-trip in their own lists") {
     model::Note footnote;
     footnote.note_id = "fn-1";
-    footnote.content_raw = std::vector<uint8_t>{0x01, 0x02};
+    footnote.content = {model::ContentRef{model::ContentType::kParagraph, "para-1"}};
     footnote.number_format = model::NumberFormat::kLowerRoman;
     footnote.restart_rule = model::NoteRestartRule::kPerPage;
 
@@ -46,7 +46,7 @@ TEST_CASE("annotations serde: note_id doesn't collide between footnote and endno
     CHECK(fe2.endnotes.size() == 1);
 }
 
-TEST_CASE("annotations serde: note_format and content_raw absent round-trip as nullopt") {
+TEST_CASE("annotations serde: note_format absent and content empty round-trip") {
     model::Note note;
     note.note_id = "fn-minimal";
 
@@ -57,7 +57,7 @@ TEST_CASE("annotations serde: note_format and content_raw absent round-trip as n
     auto fe2 = serde::deserialize_footnotes_endnotes(payload);
 
     CHECK_FALSE(fe2.footnotes[0].number_format.has_value());
-    CHECK_FALSE(fe2.footnotes[0].content_raw.has_value());
+    CHECK(fe2.footnotes[0].content.empty());
 }
 
 TEST_CASE("annotations serde: comment with full threading fields round-trips") {
@@ -95,7 +95,7 @@ TEST_CASE("annotations serde: comment optional fields absent round-trip as nullo
     c.author = "Someone";
     c.created_at = "2026-01-01T00:00:00Z";
     c.anchor_run_id = "run-1";
-    // anchor_end_run_id, parent_comment_id, content_raw all left unset
+    // anchor_end_run_id, parent_comment_id left unset; content left empty
 
     model::Comments comments;
     comments.comments = {c};
@@ -105,7 +105,7 @@ TEST_CASE("annotations serde: comment optional fields absent round-trip as nullo
 
     CHECK_FALSE(comments2.comments[0].anchor_end_run_id.has_value());
     CHECK_FALSE(comments2.comments[0].parent_comment_id.has_value());
-    CHECK_FALSE(comments2.comments[0].content_raw.has_value());
+    CHECK(comments2.comments[0].content.empty());
 }
 
 TEST_CASE("annotations serde: bookmark and hyperlink round-trip in their own lists") {

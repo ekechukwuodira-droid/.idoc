@@ -34,6 +34,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -126,8 +127,15 @@ idoc::model::Sections make_default_sections() {
     s.page_setup.columns = {1, 0, true, false};
 
     idoc::model::HeaderFooterContent default_footer;
-    // content_raw left empty -- reserved until §6/§9 exist, see model/sections.hpp
+    // content left empty -- this demo's footer has no paragraphs of its own
     s.footers.default_ = default_footer;
+
+    // References into Document Content by paragraph_id, in document order --
+    // see model/content_ref.hpp for why this is references, not embedding.
+    s.content = {
+        idoc::model::ContentRef{idoc::model::ContentType::kParagraph, "para-1"},
+        idoc::model::ContentRef{idoc::model::ContentType::kParagraph, "para-2"},
+    };
 
     sections.sections.push_back(s);
     return sections;
@@ -439,6 +447,21 @@ int cmd_dump(const std::vector<std::string>& args) {
     auto sections_payload = reader.read_block(idoc::block_type::kSections);
     if (sections_payload) {
         auto sections = idoc::serde::deserialize_sections(*sections_payload);
+
+        // Resolve Section.content ContentRefs against Document Content, to
+        // actually demonstrate the reference format working end-to-end
+        // rather than just printing type/id pairs.
+        std::map<std::string, std::string> paragraph_text_by_id;
+        auto content_payload_for_resolution = reader.read_block(idoc::block_type::kDocumentContent);
+        if (content_payload_for_resolution) {
+            auto dc = idoc::serde::deserialize_document_content(*content_payload_for_resolution);
+            for (const auto& p : dc.paragraphs) {
+                std::string text;
+                for (const auto& run : p.runs) text += run.text;
+                paragraph_text_by_id[p.paragraph_id] = text;
+            }
+        }
+
         std::cout << "\nsections (" << sections.sections.size() << "):\n";
         for (const auto& sec : sections.sections) {
             std::cout << "  " << sec.section_id << ": "
@@ -449,6 +472,16 @@ int cmd_dump(const std::vector<std::string>& args) {
                        << (sec.headers.default_.has_value() ? ", has default header" : "")
                        << (sec.footers.default_.has_value() ? ", has default footer" : "")
                        << "\n";
+            for (const auto& ref : sec.content) {
+                std::cout << "    -> "
+                           << (ref.type == idoc::model::ContentType::kParagraph ? "paragraph " : "table ")
+                           << ref.content_id;
+                auto it = paragraph_text_by_id.find(ref.content_id);
+                if (it != paragraph_text_by_id.end()) {
+                    std::cout << ": \"" << it->second << "\"";
+                }
+                std::cout << "\n";
+            }
         }
     }
 

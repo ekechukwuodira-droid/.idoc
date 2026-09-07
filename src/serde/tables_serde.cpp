@@ -1,6 +1,7 @@
 #include "idoc/serde/tables_serde.hpp"
 #include "idoc/container/tlv.hpp"
 #include "idoc/container/byteorder.hpp"
+#include "idoc/serde/common_serde.hpp"
 
 namespace idoc::serde {
 
@@ -24,7 +25,7 @@ constexpr uint32_t kMergeRole = 4;
 constexpr uint32_t kShadingRaw = 5;   // reserved
 constexpr uint32_t kBordersRaw = 6;   // reserved
 constexpr uint32_t kVerticalAlign = 7;
-constexpr uint32_t kContentRaw = 8;   // reserved, see model/tables.hpp
+constexpr uint32_t kContent = 8;   // Block[] -- see model/content_ref.hpp
 } // namespace cell_field
 
 namespace row_field {
@@ -139,9 +140,7 @@ std::vector<uint8_t> encode_cell(const model::Cell& cell) {
     tlv::write_record(out, cell_field::kVerticalAlign, kTablesSchemaVersion,
                        std::vector<uint8_t>{static_cast<uint8_t>(cell.vertical_align)});
 
-    if (cell.content_raw.has_value()) {
-        tlv::write_record(out, cell_field::kContentRaw, kTablesSchemaVersion, *cell.content_raw);
-    }
+    tlv::write_record(out, cell_field::kContent, kTablesSchemaVersion, common::encode_content_refs(cell.content));
 
     return out;
 }
@@ -174,8 +173,8 @@ model::Cell decode_cell(const std::vector<uint8_t>& payload) {
             case cell_field::kVerticalAlign:
                 cell.vertical_align = static_cast<model::CellVerticalAlign>(r.read_u8());
                 break;
-            case cell_field::kContentRaw:
-                cell.content_raw = rec.payload;
+            case cell_field::kContent:
+                cell.content = common::decode_content_refs(rec.payload);
                 break;
             default:
                 break; // unknown field: skip

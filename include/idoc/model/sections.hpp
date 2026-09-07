@@ -1,12 +1,11 @@
 #pragma once
 // Section & PageSetup — §5. Pure data, no I/O.
 //
-// DEFERRED: `Section.content` and `HeaderFooterContent.content` are
-// `Block[]` (Paragraph | Table) in the spec, but Paragraph (§6) and Table
-// (§9) don't exist yet. Same treatment as StyleDefinition's
-// paragraph_props/run_props in the previous stage: reserved-but-empty
-// optional raw byte slots with their TLV field IDs locked in now, so
-// populating them later is a serde-only change.
+// RESOLVED: `Section.content` and `HeaderFooterContent.content` are
+// `Block[]` (Paragraph | Table) in the spec. This used to be a reserved
+// raw byte slot pending a decision on the reference format; that
+// decision is now made in model/content_ref.hpp -- see that file for the
+// full reasoning. Both fields are now `std::vector<ContentRef>`.
 //
 // ASSUMPTION FLAGGED: the spec names `page_number_restart`'s type
 // `NumberingRestart` but never defines it. §7/§8 define a `RestartRule`
@@ -19,6 +18,8 @@
 // (NumberingRestart::restart + start_at) rather than reusing RestartRule
 // verbatim, since reusing it would mean either a level_index field that
 // means nothing for pages, or a variant that only sometimes applies.
+
+#include "idoc/model/content_ref.hpp" // ContentRef
 
 #include <cstdint>
 #include <optional>
@@ -95,11 +96,11 @@ struct NumberingRestart {
 };
 
 struct HeaderFooterContent {
-    // Reserved for §6/§9's Block[] (Paragraph | Table) -- see DEFERRED note above.
-    std::optional<std::vector<uint8_t>> content_raw;
+    // Block[] (Paragraph | Table) -- see model/content_ref.hpp.
+    std::vector<ContentRef> content;
 
     bool operator==(const HeaderFooterContent& other) const {
-        return content_raw == other.content_raw;
+        return content == other.content;
     }
 };
 
@@ -119,14 +120,14 @@ struct Section {
     HeaderFooterSet headers;
     HeaderFooterSet footers;
     std::optional<NumberingRestart> page_number_restart;
-    // Reserved for §6/§9's Block[] (Paragraph | Table) -- see DEFERRED note above.
-    std::optional<std::vector<uint8_t>> content_raw;
+    // Block[] (Paragraph | Table) -- see model/content_ref.hpp.
+    std::vector<ContentRef> content;
 
     bool operator==(const Section& other) const {
         return section_id == other.section_id && page_setup == other.page_setup &&
                headers == other.headers && footers == other.footers &&
                page_number_restart == other.page_number_restart &&
-               content_raw == other.content_raw;
+               content == other.content;
     }
 };
 

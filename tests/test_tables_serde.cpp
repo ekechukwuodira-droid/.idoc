@@ -117,12 +117,13 @@ TEST_CASE("tables serde: minimal table (no optional fields) round-trips") {
     CHECK(tables2.tables[0] == t);
 }
 
-TEST_CASE("tables serde: cell-level shading/borders/content_raw reserved slots round-trip") {
+TEST_CASE("tables serde: cell-level shading/borders reserved slots and content refs round-trip") {
     model::Cell cell;
     cell.cell_id = "cell-with-reserved";
     cell.shading_raw = std::vector<uint8_t>{0x01};
     cell.borders_raw = std::vector<uint8_t>{0x02, 0x03};
-    cell.content_raw = std::vector<uint8_t>{0xAA, 0xBB};
+    cell.content = {model::ContentRef{model::ContentType::kParagraph, "para-1"},
+                     model::ContentRef{model::ContentType::kTable, "nested-table-1"}};
 
     model::Row row;
     row.row_id = "row-1";
@@ -141,7 +142,11 @@ TEST_CASE("tables serde: cell-level shading/borders/content_raw reserved slots r
     const auto& cell2 = tables2.tables[0].rows[0].cells[0];
     CHECK(cell2.shading_raw.value() == std::vector<uint8_t>{0x01});
     CHECK(cell2.borders_raw.value() == std::vector<uint8_t>{0x02, 0x03});
-    CHECK(cell2.content_raw.value() == std::vector<uint8_t>{0xAA, 0xBB});
+    REQUIRE(cell2.content.size() == 2);
+    CHECK(cell2.content[0].type == model::ContentType::kParagraph);
+    CHECK(cell2.content[0].content_id == "para-1");
+    CHECK(cell2.content[1].type == model::ContentType::kTable);
+    CHECK(cell2.content[1].content_id == "nested-table-1");
 }
 
 TEST_CASE("tables serde: multiple tables preserve order") {

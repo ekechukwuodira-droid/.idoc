@@ -4,10 +4,9 @@
 // (Footnotes/Endnotes, Comments, Bookmarks/Hyperlinks), modeled here as
 // three separate top-level container structs at the bottom of this file.
 //
-// DEFERRED: `Note.content` and `Comment.content` (both `Block[]`) get the
-// same reserved-raw-bytes treatment as `Section.content`/`Cell.content` --
-// same open architecture question about the {content_type, content_id}
-// reference format, tracked in serde/paragraph_serde.hpp.
+// RESOLVED: `Note.content` and `Comment.content` (both `Block[]`) now use
+// the reference format decided in model/content_ref.hpp -- the same one
+// Section/Cell/PageGeometry content use.
 //
 // ASSUMPTION FLAGGED: `Note.number_format` reuses §7's `NumberFormat`
 // as-is (no redefinition given here, unlike §8 which explicitly
@@ -29,7 +28,8 @@
 #include <string>
 #include <vector>
 
-#include "idoc/model/numbering.hpp" // NumberFormat (reused as-is, see note above)
+#include "idoc/model/content_ref.hpp" // ContentRef
+#include "idoc/model/numbering.hpp"   // NumberFormat (reused as-is, see note above)
 
 namespace idoc::model {
 
@@ -41,13 +41,13 @@ enum class NoteRestartRule : uint8_t {
 
 struct Note {
     std::string note_id;
-    // Reserved for Block[] -- see DEFERRED note above.
-    std::optional<std::vector<uint8_t>> content_raw;
+    // Block[] -- see model/content_ref.hpp.
+    std::vector<ContentRef> content;
     std::optional<NumberFormat> number_format; // independent numbering style per note type
     NoteRestartRule restart_rule = NoteRestartRule::kContinuous;
 
     bool operator==(const Note& other) const {
-        return note_id == other.note_id && content_raw == other.content_raw &&
+        return note_id == other.note_id && content == other.content &&
                number_format == other.number_format && restart_rule == other.restart_rule;
     }
 };
@@ -56,8 +56,8 @@ struct Comment {
     std::string comment_id;
     std::string author;
     std::string created_at; // ISO 8601
-    // Reserved for Block[] -- see DEFERRED note above.
-    std::optional<std::vector<uint8_t>> content_raw;
+    // Block[] -- see model/content_ref.hpp.
+    std::vector<ContentRef> content;
     std::string anchor_run_id;                    // start
     std::optional<std::string> anchor_end_run_id; // end, if the range spans multiple runs
     std::optional<std::string> parent_comment_id; // for threaded replies
@@ -65,7 +65,7 @@ struct Comment {
 
     bool operator==(const Comment& other) const {
         return comment_id == other.comment_id && author == other.author &&
-               created_at == other.created_at && content_raw == other.content_raw &&
+               created_at == other.created_at && content == other.content &&
                anchor_run_id == other.anchor_run_id &&
                anchor_end_run_id == other.anchor_end_run_id &&
                parent_comment_id == other.parent_comment_id && resolved == other.resolved;

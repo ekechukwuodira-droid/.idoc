@@ -24,7 +24,7 @@ processor) layers on top of later — nothing here depends on Qt.
   `ResourceEntry.natural_size` needed it.
 - **CLI** (`idoc_cli`): `create --with-defaults` now writes a full
   fourteen-block document; `dump` decodes and prints all fourteen.
-- **Tests** (`idoc_tests`, doctest via CTest, 117 cases / 350 assertions):
+- **Tests** (`idoc_tests`, doctest via CTest, 123 cases / 380 assertions):
   every block's round-trip and forward-compatibility case, plus container
   tests up to a realistic fourteen-block document.
 - **CI**: green on Ubuntu, macOS, and Windows. Fixed a real cross-platform
@@ -61,17 +61,20 @@ processor) layers on top of later — nothing here depends on Qt.
    value must survive a round-trip rather than fail to parse. Modeled as
    a raw `optional<uint8_t>` with named constants for the values given,
    not a strict `enum class`. See `model/paragraph.hpp`.
-5. **`Section.content` / physical "Document Content" block mismatch.**
-   §2's document tree types `Section.content` as `Block[]` embedded
-   directly in the Section. But §1.1's physical layout separately numbers
-   "Block 5: Document Content" as its own top-level block. The spec
-   doesn't reconcile these two views. We built Document Content as its
-   own block of ID-addressable `Paragraph` records (matching what the
-   physical layout table names it, and consistent with §1.6's
-   incremental-save story needing paragraph-level granularity).
-   `Section.content_raw` stays a reserved opaque blob until the reference
-   format connecting the two is actually decided — see the note in
-   `include/idoc/serde/paragraph_serde.hpp`.
+5. **`Section.content` / physical "Document Content" block mismatch —
+   NOW RESOLVED.** §2's document tree types `Section.content` as `Block[]`
+   embedded directly in the Section. But §1.1's physical layout
+   separately numbers "Block 5: Document Content" as its own top-level
+   block. The spec doesn't reconcile these two views. We built Document
+   Content as its own block of ID-addressable `Paragraph` records
+   (matching what the physical layout table names it, and consistent
+   with §1.6's incremental-save story needing paragraph-level
+   granularity) — and the reference format connecting the two is now
+   decided: an ordered list of `{content_type, content_id}` pairs
+   (`ContentRef`, in `include/idoc/model/content_ref.hpp`). This resolved
+   six separate reserved fields at once: `Section.content`,
+   `HeaderFooterContent.content`, `Cell.content` (§9), `Note.content`/
+   `Comment.content` (§10), and `PageGeometry.content_block_refs` (§13).
 6. **`Glyph`, `ResourceRef`, `LevelOverride` (§7) are all used but never
    defined.** `Glyph` → `uint32_t` Unicode codepoint (unambiguous from
    context). `ResourceRef` → a single `resource_id` string, same
@@ -126,10 +129,9 @@ processor) layers on top of later — nothing here depends on Qt.
     a second hash algorithm for one field would be an unforced
     complication. See `include/idoc/model/preserved_unknown.hpp`.
 16. **§13's `PageGeometry` is described only in prose**, not a formal
-    field list. "Content block references" hits the same undecided
-    `Section.content` reference-format question (point 5); "field cache
-    pointers" is read as a plain list of field IDs. See
-    `include/idoc/model/layout_cache.hpp`.
+    field list. "Content block references" now uses the `ContentRef`
+    format resolved in point 5; "field cache pointers" is read as a
+    plain list of field IDs. See `include/idoc/model/layout_cache.hpp`.
 
 ## Deliberately deferred (per current scope)
 
@@ -138,12 +140,6 @@ processor) layers on top of later — nothing here depends on Qt.
   (§6). Populating them is now possible but wasn't done this stage; it's
   a serde-only change (encode/decode the real struct into the slot) with
   no changes to `Styles`' shape.
-- `Section.content`, `HeaderFooterContent.content`, `Cell.content`, and
-  `PageGeometry.content_block_refs` (all `Block[]` or references into
-  it) — reserved raw byte slots until the `{content_type, content_id}`
-  reference format is decided. Now that Paragraph, Table, *and* the
-  layout cache all need this same decision, it's the most natural next
-  thing to resolve.
 - `ParagraphProperties.borders`/`shading`/`tab_stops`, and `TableProperties`/
   `Cell`'s equivalents — reserved raw byte slots; `BorderSet`/`Shading`/
   `TabStop[]` have no defined wire shape anywhere in the spec (the spec's
@@ -237,9 +233,9 @@ automatically — no configuration needed.
 ```
 include/idoc/           public headers
   container/             FileHeader, Manifest, BlockDirectory, TLV, compression, block type IDs
-  model/                 all 14 blocks' pure data types (Metadata through LayoutCache)
+  model/                 all 14 blocks' pure data types (Metadata through LayoutCache), plus content_ref.hpp
   serde/                 per-block TLV mapping, plus common_serde for shared primitives
-    common_serde.hpp       Color, FontRef, Indent, Spacing, Size2D, RunProperties, RestartRule
+    common_serde.hpp       Color, FontRef, Indent, Spacing, Size2D, RunProperties, RestartRule, ContentRef
 src/                     implementation, mirrors include/idoc/ layout
 cli/main.cpp             idoc_cli: create / dump / verify
 tests/                   doctest suite, one file per concern
@@ -248,19 +244,22 @@ tests/                   doctest suite, one file per concern
 
 ## Next stage
 
-**All 14 of the spec's container blocks now exist and round-trip.** What
-remains is qualitatively different work:
+**All 14 of the spec's container blocks now exist and round-trip, and
+the `Block[]` content-reference question is resolved** — `Section.content`,
+`HeaderFooterContent.content`, `Cell.content`, `Note.content`,
+`Comment.content`, and `PageGeometry.content_block_refs` all use the
+same `ContentRef` format (`include/idoc/model/content_ref.hpp`), proven
+working end-to-end: the CLI resolves a Section's references against
+Document Content and prints real paragraph text, and a dedicated
+container test resolves a mixed paragraph/table reference list across
+separately-stored blocks. What remains is qualitatively different work:
 
-1. **The `Section.content`/`Cell.content`/`PageGeometry.content_block_refs`
-   reference format** — the single most-referenced open question across
-   this codebase (5+ deferred slots all point back to it). Deciding this
-   unlocks populating several reserved fields at once.
-2. **Resource blob storage** — an actual read/write API on
+1. **Resource blob storage** — an actual read/write API on
    `ContainerWriter`/`ContainerReader` for the resource area, which has
    been reserved-but-empty since stage 1.
-3. **Migration framework** (§14) and **salvage mode** (§15) — the two
+2. **Migration framework** (§14) and **salvage mode** (§15) — the two
    infrastructure pieces the spec describes but that aren't new blocks.
-4. Separately, and much larger: the **style resolver**, **numbering
+3. Separately, and much larger: the **style resolver**, **numbering
    resolution**, **fields computation**, and the **layout/pagination
    engine itself** — the real word-processor rendering work this entire
    container format exists to support.

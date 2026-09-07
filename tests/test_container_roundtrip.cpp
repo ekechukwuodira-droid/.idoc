@@ -508,3 +508,78 @@ TEST_CASE("container: fourteen-block document (adds preserved_unknown + layout_c
     CHECK(lc2 == lc);
     CHECK(lc2.generation == 3);
 }
+
+TEST_CASE("container: Section.content ContentRefs resolve against Document Content across blocks") {
+    // The point of the whole reference-format resolution: a Section's
+    // ContentRefs should resolve to real Paragraph data stored in a
+    // completely separate block, without the Sections block ever
+    // embedding that data itself.
+    ContainerWriter writer;
+    writer.set_document_id("cross-block-resolution-doc");
+
+    model::DocumentContent content;
+    model::Paragraph p1;
+    p1.paragraph_id = "para-1";
+    model::Run r1;
+    r1.run_id = "run-1";
+    r1.text = "Chapter One";
+    p1.runs.push_back(r1);
+    content.paragraphs.push_back(p1);
+
+    model::Paragraph p2;
+    p2.paragraph_id = "para-2";
+    model::Run r2;
+    r2.run_id = "run-2";
+    r2.text = "It was a dark and stormy night.";
+    p2.runs.push_back(r2);
+    content.paragraphs.push_back(p2);
+
+    writer.add_block(block_type::kDocumentContent, "content", serde::kParagraphsSchemaVersion,
+                      serde::serialize_document_content(content));
+
+    model::Tables tables;
+    model::Table table;
+    table.table_id = "table-1";
+    tables.tables.push_back(table);
+    writer.add_block(block_type::kTables, "tables", serde::kTablesSchemaVersion,
+                      serde::serialize_tables(tables));
+
+    model::Sections sections;
+    model::Section sec;
+    sec.section_id = "sec-1";
+    sec.content = {
+        model::ContentRef{model::ContentType::kParagraph, "para-1"},
+        model::ContentRef{model::ContentType::kTable, "table-1"},
+        model::ContentRef{model::ContentType::kParagraph, "para-2"},
+    };
+    sections.sections.push_back(sec);
+    writer.add_block(block_type::kSections, "sections", serde::kSectionsSchemaVersion,
+                      serde::serialize_sections(sections));
+
+    auto file_bytes = writer.build();
+    auto reader = ContainerReader::open(file_bytes);
+
+    auto sections2 = serde::deserialize_sections(*reader.read_block(block_type::kSections));
+    auto content2 = serde::deserialize_document_content(*reader.read_block(block_type::kDocumentContent));
+
+    REQUIRE(sections2.sections.size() == 1);
+    const auto& refs = sections2.sections[0].content;
+    REQUIRE(refs.size() == 3);
+
+    // Resolve each ref manually, exactly as a real reader/renderer would.
+    CHECK(refs[0].type == model::ContentType::kParagraph);
+    auto find_paragraph = [&](const std::string& id) -> const model::Paragraph* {
+        for (const auto& p : content2.paragraphs) if (p.paragraph_id == id) return &p;
+        return nullptr;
+    };
+    const model::Paragraph* resolved1 = find_paragraph(refs[0].content_id);
+    REQUIRE(resolved1 != nullptr);
+    CHECK(resolved1->runs[0].text == "Chapter One");
+
+    CHECK(refs[1].type == model::ContentType::kTable);
+    CHECK(refs[1].content_id == "table-1");
+
+    const model::Paragraph* resolved3 = find_paragraph(refs[2].content_id);
+    REQUIRE(resolved3 != nullptr);
+    CHECK(resolved3->runs[0].text == "It was a dark and stormy night.");
+}

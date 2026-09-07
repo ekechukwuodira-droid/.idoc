@@ -1,6 +1,7 @@
 #include "idoc/serde/layout_cache_serde.hpp"
 #include "idoc/container/tlv.hpp"
 #include "idoc/container/byteorder.hpp"
+#include "idoc/serde/common_serde.hpp"
 
 namespace idoc::serde {
 
@@ -13,7 +14,7 @@ constexpr uint32_t kFieldResult = 3;  // repeated
 namespace page_field {
 constexpr uint32_t kPageNumber = 1;
 constexpr uint32_t kSectionId = 2;
-constexpr uint32_t kContentBlockRefsRaw = 3; // reserved, see model/layout_cache.hpp
+constexpr uint32_t kContentBlockRefs = 3; // Block[] -- see model/content_ref.hpp
 constexpr uint32_t kFieldId = 4;             // repeated
 } // namespace page_field
 
@@ -27,10 +28,8 @@ std::vector<uint8_t> encode_page(const model::PageGeometry& page) {
     tlv::write_record(out, page_field::kSectionId, kLayoutCacheSchemaVersion,
                        [&] { std::vector<uint8_t> p; byteorder::write_string(p, page.section_id); return p; }());
 
-    if (page.content_block_refs_raw.has_value()) {
-        tlv::write_record(out, page_field::kContentBlockRefsRaw, kLayoutCacheSchemaVersion,
-                           *page.content_block_refs_raw);
-    }
+    tlv::write_record(out, page_field::kContentBlockRefs, kLayoutCacheSchemaVersion,
+                       common::encode_content_refs(page.content_block_refs));
 
     for (const auto& field_id : page.field_ids) {
         std::vector<uint8_t> p;
@@ -54,8 +53,8 @@ model::PageGeometry decode_page(const std::vector<uint8_t>& payload) {
             case page_field::kSectionId:
                 page.section_id = r.read_string();
                 break;
-            case page_field::kContentBlockRefsRaw:
-                page.content_block_refs_raw = rec.payload;
+            case page_field::kContentBlockRefs:
+                page.content_block_refs = common::decode_content_refs(rec.payload);
                 break;
             case page_field::kFieldId:
                 page.field_ids.push_back(r.read_string());

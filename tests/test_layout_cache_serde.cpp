@@ -18,7 +18,8 @@ model::LayoutCache make_sample_layout_cache() {
     model::PageGeometry page2;
     page2.page_number = 2;
     page2.section_id = "sec-1";
-    page2.content_block_refs_raw = std::vector<uint8_t>{0x01, 0x02, 0x03};
+    page2.content_block_refs = {model::ContentRef{model::ContentType::kParagraph, "para-5"},
+                                 model::ContentRef{model::ContentType::kTable, "table-2"}};
     page2.field_ids = {"field-page-number"};
 
     lc.pages = {page1, page2};
@@ -69,14 +70,17 @@ TEST_CASE("layout_cache serde: pages preserve order and their own field_ids list
     REQUIRE(lc2.pages[1].field_ids.size() == 1);
 }
 
-TEST_CASE("layout_cache serde: content_block_refs_raw absent round-trips as nullopt") {
+TEST_CASE("layout_cache serde: content_block_refs empty vs. populated round-trip correctly") {
     model::LayoutCache lc = make_sample_layout_cache();
     auto payload = serde::serialize_layout_cache(lc);
     auto lc2 = serde::deserialize_layout_cache(payload);
 
-    CHECK_FALSE(lc2.pages[0].content_block_refs_raw.has_value());
-    REQUIRE(lc2.pages[1].content_block_refs_raw.has_value());
-    CHECK(lc2.pages[1].content_block_refs_raw.value() == std::vector<uint8_t>{0x01, 0x02, 0x03});
+    CHECK(lc2.pages[0].content_block_refs.empty());
+    REQUIRE(lc2.pages[1].content_block_refs.size() == 2);
+    CHECK(lc2.pages[1].content_block_refs[0].type == model::ContentType::kParagraph);
+    CHECK(lc2.pages[1].content_block_refs[0].content_id == "para-5");
+    CHECK(lc2.pages[1].content_block_refs[1].type == model::ContentType::kTable);
+    CHECK(lc2.pages[1].content_block_refs[1].content_id == "table-2");
 }
 
 TEST_CASE("layout_cache serde: empty cache (no pages, no field_results) round-trips") {

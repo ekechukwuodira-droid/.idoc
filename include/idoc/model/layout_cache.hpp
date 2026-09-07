@@ -10,17 +10,16 @@
 // ASSUMPTION FLAGGED: `PageGeometry` is described only in prose ("per
 // page: page number (resolved), section_id, content block references,
 // field cache pointers"), not as a formal field list. `content block
-// references` hits the same open question already flagged for
-// Section.content/Cell.content (serde/paragraph_serde.hpp) -- what a
-// reference into Document Content/Tables actually looks like isn't
-// decided yet -- so it's reserved as opaque bytes here too, for the same
-// reason. `field cache pointers` is read as a plain list of field_ids
-// relevant to the page (simple ID references, same treatment as
-// Run.comment_anchor_ids elsewhere).
+// references` now uses the reference format decided in
+// model/content_ref.hpp -- the same one Section/Cell/Note/Comment
+// content use. `field cache pointers` is read as a plain list of
+// field_ids relevant to the page (simple ID references, same treatment
+// as Run.comment_anchor_ids elsewhere).
+
+#include "idoc/model/content_ref.hpp" // ContentRef
 
 #include <cstdint>
 #include <map>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -29,13 +28,12 @@ namespace idoc::model {
 struct PageGeometry {
     uint32_t page_number = 0; // resolved, i.e. the actual displayed number
     std::string section_id;
-    // Reserved -- see ASSUMPTION FLAGGED note above.
-    std::optional<std::vector<uint8_t>> content_block_refs_raw;
+    std::vector<ContentRef> content_block_refs;
     std::vector<std::string> field_ids; // "field cache pointers" relevant to this page
 
     bool operator==(const PageGeometry& other) const {
         return page_number == other.page_number && section_id == other.section_id &&
-               content_block_refs_raw == other.content_block_refs_raw &&
+               content_block_refs == other.content_block_refs &&
                field_ids == other.field_ids;
     }
 };
@@ -53,3 +51,4 @@ struct LayoutCache {
 };
 
 } // namespace idoc::model
+

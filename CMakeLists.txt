@@ -107,6 +107,7 @@ add_executable(idoc_tests
     tests/test_resources_serde.cpp
     tests/test_preserved_unknown_serde.cpp
     tests/test_layout_cache_serde.cpp
+    tests/test_content_ref_serde.cpp
 )
 target_link_libraries(idoc_tests PRIVATE idoc_core doctest::doctest)
 

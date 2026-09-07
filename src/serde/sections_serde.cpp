@@ -17,7 +17,7 @@ constexpr uint32_t kPageSetup = 2;
 constexpr uint32_t kHeaders = 3;
 constexpr uint32_t kFooters = 4;
 constexpr uint32_t kPageNumberRestart = 5;
-constexpr uint32_t kContentRaw = 6; // reserved, see DEFERRED note in sections.hpp
+constexpr uint32_t kContent = 6; // Block[] -- see model/content_ref.hpp
 } // namespace section_field
 
 namespace page_setup_field {
@@ -37,7 +37,7 @@ constexpr uint32_t kEven = 3;
 } // namespace header_footer_set_field
 
 namespace header_footer_content_field {
-constexpr uint32_t kContentRaw = 1; // reserved, see DEFERRED note in sections.hpp
+constexpr uint32_t kContent = 1; // Block[] -- see model/content_ref.hpp
 } // namespace header_footer_content_field
 
 namespace numbering_restart_field {
@@ -147,9 +147,8 @@ model::PageSetup decode_page_setup(const std::vector<uint8_t>& payload) {
 
 std::vector<uint8_t> encode_header_footer_content(const model::HeaderFooterContent& c) {
     std::vector<uint8_t> out;
-    if (c.content_raw.has_value()) {
-        tlv::write_record(out, header_footer_content_field::kContentRaw, kSectionsSchemaVersion, *c.content_raw);
-    }
+    tlv::write_record(out, header_footer_content_field::kContent, kSectionsSchemaVersion,
+                       common::encode_content_refs(c.content));
     return out;
 }
 
@@ -157,8 +156,8 @@ model::HeaderFooterContent decode_header_footer_content(const std::vector<uint8_
     model::HeaderFooterContent c;
     auto records = tlv::parse_records(payload);
     for (const auto& rec : records) {
-        if (rec.header.type_id == header_footer_content_field::kContentRaw) {
-            c.content_raw = rec.payload;
+        if (rec.header.type_id == header_footer_content_field::kContent) {
+            c.content = common::decode_content_refs(rec.payload);
         }
         // unknown fields: skip
     }
@@ -254,9 +253,8 @@ std::vector<uint8_t> encode_section(const model::Section& s) {
         tlv::write_record(out, section_field::kPageNumberRestart, kSectionsSchemaVersion,
                            encode_numbering_restart(*s.page_number_restart));
     }
-    if (s.content_raw.has_value()) {
-        tlv::write_record(out, section_field::kContentRaw, kSectionsSchemaVersion, *s.content_raw);
-    }
+    tlv::write_record(out, section_field::kContent, kSectionsSchemaVersion,
+                       common::encode_content_refs(s.content));
 
     return out;
 }
@@ -284,8 +282,8 @@ model::Section decode_section(const std::vector<uint8_t>& payload) {
             case section_field::kPageNumberRestart:
                 s.page_number_restart = decode_numbering_restart(rec.payload);
                 break;
-            case section_field::kContentRaw:
-                s.content_raw = rec.payload;
+            case section_field::kContent:
+                s.content = common::decode_content_refs(rec.payload);
                 break;
             default:
                 break; // unknown field: skip

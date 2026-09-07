@@ -1,14 +1,15 @@
 #pragma once
 // Tables — §9. Pure data, no I/O.
 //
-// DEFERRED: `TableProperties.borders`/`default_shading`, `Cell.shading`/
-// `borders`, and `Cell.content` (`Block[]` -- paragraphs or nested
-// tables) are all reserved raw byte slots, for the same reasons already
-// established: BorderSet/Shading have no defined wire shape anywhere in
-// the spec (same as ParagraphProperties' equivalents), and `Block[]` hits
-// the same Section.content architecture question flagged in
-// serde/paragraph_serde.hpp -- a table cell's content needs the same
-// {content_type, content_id} reference resolution once that's decided.
+// DEFERRED: `TableProperties.borders`/`default_shading` and `Cell.shading`/
+// `borders` are still reserved raw byte slots -- `BorderSet`/`Shading`
+// have no defined wire shape anywhere in the spec (same as
+// ParagraphProperties' equivalents).
+//
+// RESOLVED: `Cell.content` (`Block[]` -- paragraphs or nested tables) now
+// uses the reference format decided in model/content_ref.hpp -- see that
+// file for the full reasoning. A cell containing another table is just a
+// ContentRef with type == kTable; no special-casing needed.
 //
 // Note `TableProperties.borders` has no `?` in the spec (implying
 // required), unlike `default_shading?` and the Cell-level equivalents
@@ -29,7 +30,8 @@
 // the spec calling both "VerticalAlign" -- same collision-avoidance
 // treatment as that one.
 
-#include "idoc/model/paragraph.hpp" // Alignment
+#include "idoc/model/content_ref.hpp" // ContentRef
+#include "idoc/model/paragraph.hpp"   // Alignment
 
 #include <cstdint>
 #include <optional>
@@ -94,14 +96,14 @@ struct Cell {
     std::optional<std::vector<uint8_t>> shading_raw; // reserved, see DEFERRED note
     std::optional<std::vector<uint8_t>> borders_raw; // reserved, see DEFERRED note
     CellVerticalAlign vertical_align = CellVerticalAlign::kTop;
-    // Reserved for Block[] (Paragraph | Table) -- see DEFERRED note above.
-    std::optional<std::vector<uint8_t>> content_raw;
+    // Block[] (Paragraph | Table) -- see model/content_ref.hpp.
+    std::vector<ContentRef> content;
 
     bool operator==(const Cell& other) const {
         return cell_id == other.cell_id && col_span == other.col_span &&
                row_span == other.row_span && merge_role == other.merge_role &&
                shading_raw == other.shading_raw && borders_raw == other.borders_raw &&
-               vertical_align == other.vertical_align && content_raw == other.content_raw;
+               vertical_align == other.vertical_align && content == other.content;
     }
 };
 

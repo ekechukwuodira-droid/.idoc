@@ -1,6 +1,7 @@
 #include "idoc/serde/annotations_serde.hpp"
 #include "idoc/container/tlv.hpp"
 #include "idoc/container/byteorder.hpp"
+#include "idoc/serde/common_serde.hpp"
 
 namespace idoc::serde {
 
@@ -11,7 +12,7 @@ constexpr uint32_t kEndnote = 2;
 
 namespace note_field {
 constexpr uint32_t kNoteId = 1;
-constexpr uint32_t kContentRaw = 2; // reserved, see model/annotations.hpp
+constexpr uint32_t kContent = 2; // Block[] -- see model/content_ref.hpp
 constexpr uint32_t kNumberFormat = 3;
 constexpr uint32_t kRestartRule = 4;
 } // namespace note_field
@@ -24,7 +25,7 @@ namespace comment_field {
 constexpr uint32_t kCommentId = 1;
 constexpr uint32_t kAuthor = 2;
 constexpr uint32_t kCreatedAt = 3;
-constexpr uint32_t kContentRaw = 4; // reserved, see model/annotations.hpp
+constexpr uint32_t kContent = 4; // Block[] -- see model/content_ref.hpp
 constexpr uint32_t kAnchorRunId = 5;
 constexpr uint32_t kAnchorEndRunId = 6;
 constexpr uint32_t kParentCommentId = 7;
@@ -61,9 +62,8 @@ std::vector<uint8_t> encode_note(const model::Note& note) {
         byteorder::write_string(p, note.note_id);
         tlv::write_record(out, note_field::kNoteId, kAnnotationsSchemaVersion, p);
     }
-    if (note.content_raw.has_value()) {
-        tlv::write_record(out, note_field::kContentRaw, kAnnotationsSchemaVersion, *note.content_raw);
-    }
+    tlv::write_record(out, note_field::kContent, kAnnotationsSchemaVersion,
+                       common::encode_content_refs(note.content));
     if (note.number_format.has_value()) {
         tlv::write_record(out, note_field::kNumberFormat, kAnnotationsSchemaVersion,
                            std::vector<uint8_t>{static_cast<uint8_t>(*note.number_format)});
@@ -84,8 +84,8 @@ model::Note decode_note(const std::vector<uint8_t>& payload) {
             case note_field::kNoteId:
                 note.note_id = r.read_string();
                 break;
-            case note_field::kContentRaw:
-                note.content_raw = rec.payload;
+            case note_field::kContent:
+                note.content = common::decode_content_refs(rec.payload);
                 break;
             case note_field::kNumberFormat:
                 note.number_format = static_cast<model::NumberFormat>(r.read_u8());
@@ -120,9 +120,8 @@ std::vector<uint8_t> encode_comment(const model::Comment& comment) {
         byteorder::write_string(p, comment.created_at);
         tlv::write_record(out, comment_field::kCreatedAt, kAnnotationsSchemaVersion, p);
     }
-    if (comment.content_raw.has_value()) {
-        tlv::write_record(out, comment_field::kContentRaw, kAnnotationsSchemaVersion, *comment.content_raw);
-    }
+    tlv::write_record(out, comment_field::kContent, kAnnotationsSchemaVersion,
+                       common::encode_content_refs(comment.content));
     {
         std::vector<uint8_t> p;
         byteorder::write_string(p, comment.anchor_run_id);
@@ -160,8 +159,8 @@ model::Comment decode_comment(const std::vector<uint8_t>& payload) {
             case comment_field::kCreatedAt:
                 comment.created_at = r.read_string();
                 break;
-            case comment_field::kContentRaw:
-                comment.content_raw = rec.payload;
+            case comment_field::kContent:
+                comment.content = common::decode_content_refs(rec.payload);
                 break;
             case comment_field::kAnchorRunId:
                 comment.anchor_run_id = r.read_string();

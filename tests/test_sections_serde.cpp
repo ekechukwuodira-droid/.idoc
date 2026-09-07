@@ -19,11 +19,11 @@ model::Section make_sample_section() {
     s.page_setup.paper_source = "Tray 1";
 
     model::HeaderFooterContent default_header;
-    default_header.content_raw = std::vector<uint8_t>{0x01, 0x02, 0x03};
+    default_header.content = {model::ContentRef{model::ContentType::kParagraph, "para-1"}};
     s.headers.default_ = default_header;
 
     model::HeaderFooterContent first_footer;
-    first_footer.content_raw = std::vector<uint8_t>{0xAA};
+    first_footer.content = {model::ContentRef{model::ContentType::kParagraph, "para-2"}};
     s.footers.first = first_footer;
 
     model::NumberingRestart restart;
@@ -31,7 +31,8 @@ model::Section make_sample_section() {
     restart.start_at = 1;
     s.page_number_restart = restart;
 
-    s.content_raw = std::vector<uint8_t>{0xDE, 0xAD, 0xBE, 0xEF};
+    s.content = {model::ContentRef{model::ContentType::kParagraph, "para-3"},
+                 model::ContentRef{model::ContentType::kTable, "table-1"}};
 
     return s;
 }
@@ -51,7 +52,7 @@ TEST_CASE("sections serde: full round-trip") {
 TEST_CASE("sections serde: optional fields absent round-trip as nullopt") {
     model::Section s;
     s.section_id = "sec-minimal";
-    // headers/footers default-constructed (all nullopt), page_number_restart unset, content_raw unset
+    // headers/footers default-constructed (all nullopt), page_number_restart unset, content empty
 
     model::Sections sections;
     sections.sections = {s};
@@ -65,7 +66,7 @@ TEST_CASE("sections serde: optional fields absent round-trip as nullopt") {
     CHECK_FALSE(s2.headers.first.has_value());
     CHECK_FALSE(s2.headers.even.has_value());
     CHECK_FALSE(s2.page_number_restart.has_value());
-    CHECK_FALSE(s2.content_raw.has_value());
+    CHECK(s2.content.empty());
     CHECK(s2 == s);
 }
 

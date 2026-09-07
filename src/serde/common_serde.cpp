@@ -238,4 +238,41 @@ model::RestartRule decode_restart_rule(const std::vector<uint8_t>& payload) {
     return rr;
 }
 
+namespace {
+constexpr uint32_t kContentRefRecordType = 1; // fixed record type_id within a content-ref list payload
+} // namespace
+
+std::vector<uint8_t> encode_content_ref(const model::ContentRef& ref) {
+    std::vector<uint8_t> out;
+    byteorder::write_u8(out, static_cast<uint8_t>(ref.type));
+    byteorder::write_string(out, ref.content_id);
+    return out;
+}
+
+model::ContentRef decode_content_ref(const std::vector<uint8_t>& payload) {
+    byteorder::Reader r(payload);
+    model::ContentRef ref;
+    ref.type = static_cast<model::ContentType>(r.read_u8());
+    ref.content_id = r.read_string();
+    return ref;
+}
+
+std::vector<uint8_t> encode_content_refs(const std::vector<model::ContentRef>& refs) {
+    std::vector<uint8_t> out;
+    for (const auto& ref : refs) {
+        tlv::write_record(out, kContentRefRecordType, 1, encode_content_ref(ref));
+    }
+    return out;
+}
+
+std::vector<model::ContentRef> decode_content_refs(const std::vector<uint8_t>& payload) {
+    std::vector<model::ContentRef> refs;
+    auto records = tlv::parse_records(payload);
+    for (const auto& rec : records) {
+        if (rec.header.type_id != kContentRefRecordType) continue; // unknown: skip
+        refs.push_back(decode_content_ref(rec.payload));
+    }
+    return refs;
+}
+
 } // namespace idoc::serde::common
