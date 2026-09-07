@@ -5,6 +5,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# doctest v2.4.11's own CMakeLists.txt declares cmake_minimum_required
+# below 3.5. Modern CMake (4.0+, bundled on GitHub's macOS/Windows runner
+# images) removed compatibility with that outright and refuses to
+# configure at all -- this is CMake's own suggested workaround, applied
+# globally here (not just in CI) so anyone building locally on a recent
+# CMake hits the same fix rather than a cryptic third-party error.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
