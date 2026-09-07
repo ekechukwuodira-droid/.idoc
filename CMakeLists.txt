@@ -71,6 +71,8 @@ add_library(idoc_core STATIC
     src/serde/tables_serde.cpp
     src/serde/annotations_serde.cpp
     src/serde/resources_serde.cpp
+    src/serde/preserved_unknown_serde.cpp
+    src/serde/layout_cache_serde.cpp
 )
 target_include_directories(idoc_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -103,6 +105,8 @@ add_executable(idoc_tests
     tests/test_tables_serde.cpp
     tests/test_annotations_serde.cpp
     tests/test_resources_serde.cpp
+    tests/test_preserved_unknown_serde.cpp
+    tests/test_layout_cache_serde.cpp
 )
 target_link_libraries(idoc_tests PRIVATE idoc_core doctest::doctest)
 

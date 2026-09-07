@@ -12,6 +12,8 @@
 #include "idoc/serde/tables_serde.hpp"
 #include "idoc/serde/annotations_serde.hpp"
 #include "idoc/serde/resources_serde.hpp"
+#include "idoc/serde/preserved_unknown_serde.hpp"
+#include "idoc/serde/layout_cache_serde.hpp"
 #include "idoc/model/numbering.hpp"
 #include "idoc/model/paragraph.hpp"
 #include "idoc/model/sections.hpp"
@@ -21,6 +23,8 @@
 #include "idoc/model/tables.hpp"
 #include "idoc/model/annotations.hpp"
 #include "idoc/model/resources.hpp"
+#include "idoc/model/preserved_unknown.hpp"
+#include "idoc/model/layout_cache.hpp"
 
 #include <stdexcept>
 
@@ -443,4 +447,64 @@ TEST_CASE("container: twelve-block document (adds annotations + resources)") {
     CHECK(idx2 == idx);
     REQUIRE(idx2.entries.size() == 1);
     CHECK(idx2.entries[0].mime_type == "image/png");
+}
+
+TEST_CASE("container: fourteen-block document (adds preserved_unknown + layout_cache)") {
+    ContainerWriter writer;
+    writer.set_document_id("fourteen-block-doc");
+
+    writer.add_block(block_type::kMetadata, "metadata", serde::kMetadataSchemaVersion,
+                      serde::serialize_metadata(model::Metadata{}));
+    writer.add_block(block_type::kTheme, "theme", serde::kThemeSchemaVersion,
+                      serde::serialize_theme(model::Theme{}));
+    writer.add_block(block_type::kStyles, "styles", serde::kStylesSchemaVersion,
+                      serde::serialize_styles(model::Styles{}));
+    writer.add_block(block_type::kSections, "sections", serde::kSectionsSchemaVersion,
+                      serde::serialize_sections(model::Sections{}));
+    writer.add_block(block_type::kNumberingDefinitions, "numbering", serde::kNumberingSchemaVersion,
+                      serde::serialize_numbering_definitions(model::NumberingDefinitions{}));
+    writer.add_block(block_type::kDocumentContent, "content", serde::kParagraphsSchemaVersion,
+                      serde::serialize_document_content(model::DocumentContent{}));
+    writer.add_block(block_type::kFields, "fields", serde::kFieldsSchemaVersion,
+                      serde::serialize_fields(model::Fields{}));
+    writer.add_block(block_type::kTables, "tables", serde::kTablesSchemaVersion,
+                      serde::serialize_tables(model::Tables{}));
+    writer.add_block(block_type::kFootnotesEndnotes, "footnotes_endnotes", serde::kAnnotationsSchemaVersion,
+                      serde::serialize_footnotes_endnotes(model::FootnotesEndnotes{}));
+    writer.add_block(block_type::kComments, "comments", serde::kAnnotationsSchemaVersion,
+                      serde::serialize_comments(model::Comments{}));
+    writer.add_block(block_type::kBookmarksHyperlinks, "bookmarks_hyperlinks", serde::kAnnotationsSchemaVersion,
+                      serde::serialize_bookmarks_hyperlinks(model::BookmarksHyperlinks{}));
+    writer.add_block(block_type::kResourceIndex, "resources", serde::kResourcesSchemaVersion,
+                      serde::serialize_resource_index(model::ResourceIndex{}));
+
+    model::PreservedUnknown pu;
+    pu.nodes.push_back(serde::make_preserved_node("para-1", "docx-ooxml", "/w:p/w:custom",
+                                                   std::vector<uint8_t>{0xDE, 0xAD}));
+    writer.add_block(block_type::kPreservedUnknown, "preserved_unknown", serde::kPreservedUnknownSchemaVersion,
+                      serde::serialize_preserved_unknown(pu));
+
+    model::LayoutCache lc;
+    lc.generation = 3;
+    model::PageGeometry page;
+    page.page_number = 1;
+    page.section_id = "sec-1";
+    lc.pages.push_back(page);
+    lc.field_results["field-1"] = "1";
+    writer.add_block(block_type::kLayoutCache, "layout_cache", serde::kLayoutCacheSchemaVersion,
+                      serde::serialize_layout_cache(lc));
+
+    auto file_bytes = writer.build();
+    auto reader = ContainerReader::open(file_bytes);
+
+    REQUIRE(reader.manifest().blocks.size() == 14);
+
+    auto pu2 = serde::deserialize_preserved_unknown(*reader.read_block(block_type::kPreservedUnknown));
+    CHECK(pu2 == pu);
+    REQUIRE(pu2.nodes.size() == 1);
+    CHECK(serde::verify_preserved_node_checksum(pu2.nodes[0]));
+
+    auto lc2 = serde::deserialize_layout_cache(*reader.read_block(block_type::kLayoutCache));
+    CHECK(lc2 == lc);
+    CHECK(lc2.generation == 3);
 }

@@ -9,9 +9,11 @@
 #include "idoc/container/container_writer.hpp"
 #include "idoc/model/annotations.hpp"
 #include "idoc/model/fields.hpp"
+#include "idoc/model/layout_cache.hpp"
 #include "idoc/model/metadata.hpp"
 #include "idoc/model/numbering.hpp"
 #include "idoc/model/paragraph.hpp"
+#include "idoc/model/preserved_unknown.hpp"
 #include "idoc/model/resources.hpp"
 #include "idoc/model/sections.hpp"
 #include "idoc/model/styles.hpp"
@@ -19,9 +21,11 @@
 #include "idoc/model/theme.hpp"
 #include "idoc/serde/annotations_serde.hpp"
 #include "idoc/serde/fields_serde.hpp"
+#include "idoc/serde/layout_cache_serde.hpp"
 #include "idoc/serde/metadata_serde.hpp"
 #include "idoc/serde/numbering_serde.hpp"
 #include "idoc/serde/paragraph_serde.hpp"
+#include "idoc/serde/preserved_unknown_serde.hpp"
 #include "idoc/serde/resources_serde.hpp"
 #include "idoc/serde/sections_serde.hpp"
 #include "idoc/serde/styles_serde.hpp"
@@ -252,6 +256,29 @@ idoc::model::Comments make_default_comments() {
     return comments;
 }
 
+idoc::model::PreservedUnknown make_default_preserved_unknown() {
+    // No entries by default -- --with-defaults isn't importing a real
+    // DOCX, so there's nothing genuinely foreign to preserve. Left as a
+    // real, empty PreservedUnknown so the block still exists and
+    // round-trips.
+    return idoc::model::PreservedUnknown{};
+}
+
+idoc::model::LayoutCache make_default_layout_cache() {
+    idoc::model::LayoutCache lc;
+    lc.generation = 1;
+
+    idoc::model::PageGeometry page;
+    page.page_number = 1;
+    page.section_id = "sec-1";
+    page.field_ids = {"field-1"};
+    lc.pages.push_back(page);
+
+    lc.field_results["field-1"] = "1";
+
+    return lc;
+}
+
 idoc::model::ResourceIndex make_default_resources() {
     idoc::model::ResourceIndex idx;
     // No entries by default -- --with-defaults has no actual image bytes
@@ -342,6 +369,16 @@ int cmd_create(const std::vector<std::string>& args) {
         auto resources_payload = idoc::serde::serialize_resource_index(resources);
         writer.add_block(idoc::block_type::kResourceIndex, "resources",
                           idoc::serde::kResourcesSchemaVersion, resources_payload, /*compress=*/true);
+
+        auto preserved = make_default_preserved_unknown();
+        auto preserved_payload = idoc::serde::serialize_preserved_unknown(preserved);
+        writer.add_block(idoc::block_type::kPreservedUnknown, "preserved_unknown",
+                          idoc::serde::kPreservedUnknownSchemaVersion, preserved_payload, /*compress=*/true);
+
+        auto layout_cache = make_default_layout_cache();
+        auto layout_cache_payload = idoc::serde::serialize_layout_cache(layout_cache);
+        writer.add_block(idoc::block_type::kLayoutCache, "layout_cache",
+                          idoc::serde::kLayoutCacheSchemaVersion, layout_cache_payload, /*compress=*/true);
     }
 
     auto bytes = writer.build();
@@ -491,6 +528,20 @@ int cmd_dump(const std::vector<std::string>& args) {
         for (const auto& e : idx.entries) {
             std::cout << "  [" << e.resource_id << "] " << e.mime_type << "\n";
         }
+    }
+
+    auto preserved_payload = reader.read_block(idoc::block_type::kPreservedUnknown);
+    if (preserved_payload) {
+        auto pu = idoc::serde::deserialize_preserved_unknown(*preserved_payload);
+        std::cout << "\npreserved_unknown nodes (" << pu.nodes.size() << ")\n";
+    }
+
+    auto layout_cache_payload = reader.read_block(idoc::block_type::kLayoutCache);
+    if (layout_cache_payload) {
+        auto lc = idoc::serde::deserialize_layout_cache(*layout_cache_payload);
+        std::cout << "\nlayout_cache: generation=" << lc.generation
+                   << ", " << lc.pages.size() << " page(s), "
+                   << lc.field_results.size() << " cached field result(s)\n";
     }
     return 0;
 }
