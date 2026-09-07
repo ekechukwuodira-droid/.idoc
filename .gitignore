@@ -1,0 +1,7 @@
+build/
+build-*/
+*.idoc
+.vs/
+.vscode/
+CMakeUserPresets.json
+compile_commands.json
