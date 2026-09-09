@@ -19,6 +19,7 @@
 #include "idoc/model/styles.hpp"
 #include "idoc/model/tables.hpp"
 #include "idoc/model/theme.hpp"
+#include "idoc/resolve/style_resolver.hpp"
 #include "idoc/serde/annotations_serde.hpp"
 #include "idoc/serde/fields_serde.hpp"
 #include "idoc/serde/layout_cache_serde.hpp"
@@ -95,6 +96,14 @@ idoc::model::Styles make_default_styles() {
     normal.type = idoc::model::StyleType::kParagraph;
     normal.is_default = true;
     normal.quick_style = true;
+    idoc::model::ParagraphProperties normal_props;
+    normal_props.alignment = idoc::model::Alignment::kLeft;
+    normal_props.spacing = idoc::model::Spacing{0, 240, 0, idoc::model::LineRule::kSingle};
+    normal.paragraph_props = normal_props;
+    idoc::model::RunProperties normal_run_props;
+    normal_run_props.font = idoc::model::FontRef{"Calibri", "Arial"};
+    normal_run_props.size_pt = 11.0f;
+    normal.run_props = normal_run_props;
     s.definitions.push_back(normal);
 
     idoc::model::StyleDefinition heading1;
@@ -104,13 +113,23 @@ idoc::model::Styles make_default_styles() {
     heading1.based_on = "Normal";
     heading1.next_style = "Normal";
     heading1.quick_style = true;
+    idoc::model::ParagraphProperties heading1_props;
+    heading1_props.keep_with_next = true;
+    heading1_props.spacing = idoc::model::Spacing{480, 240, 0, idoc::model::LineRule::kSingle};
+    heading1.paragraph_props = heading1_props;
+    idoc::model::RunProperties heading1_run_props;
+    heading1_run_props.bold = true;
+    heading1_run_props.size_pt = 16.0f;
+    heading1.run_props = heading1_run_props;
     s.definitions.push_back(heading1);
 
     idoc::model::StyleDefinition emphasis;
     emphasis.style_id = "Emphasis";
     emphasis.display_name = "Emphasis";
     emphasis.type = idoc::model::StyleType::kCharacter;
-    emphasis.based_on = "DefaultParagraphFont";
+    idoc::model::RunProperties emphasis_props;
+    emphasis_props.italic = true;
+    emphasis.run_props = emphasis_props;
     s.definitions.push_back(emphasis);
 
     return s;
@@ -595,12 +614,66 @@ int cmd_verify(const std::vector<std::string>& args) {
     }
 }
 
+std::string alignment_name(idoc::model::Alignment a) {
+    switch (a) {
+        case idoc::model::Alignment::kLeft: return "left";
+        case idoc::model::Alignment::kRight: return "right";
+        case idoc::model::Alignment::kCenter: return "center";
+        case idoc::model::Alignment::kJustify: return "justify";
+        case idoc::model::Alignment::kDistribute: return "distribute";
+    }
+    return "?";
+}
+
+int cmd_resolve(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        std::cerr << "resolve requires a file path\n";
+        return 1;
+    }
+
+    auto bytes = read_file(args[0]);
+    auto reader = idoc::ContainerReader::open(bytes);
+
+    idoc::model::Styles styles;
+    auto styles_payload = reader.read_block(idoc::block_type::kStyles);
+    if (styles_payload) styles = idoc::serde::deserialize_styles(*styles_payload);
+
+    idoc::resolve::StyleResolver resolver(styles);
+
+    auto content_payload = reader.read_block(idoc::block_type::kDocumentContent);
+    if (!content_payload) {
+        std::cout << "(no Document Content block found)\n";
+        return 0;
+    }
+    auto dc = idoc::serde::deserialize_document_content(*content_payload);
+
+    for (const auto& p : dc.paragraphs) {
+        auto pf = resolver.resolve_paragraph(p);
+        std::cout << "[" << p.paragraph_id << "] style="
+                   << p.style_id.value_or("(none)")
+                   << " -> alignment=" << alignment_name(pf.alignment)
+                   << ", keep_with_next=" << (pf.keep_with_next ? "true" : "false")
+                   << ", spacing_before=" << pf.spacing.before
+                   << "\n";
+        for (const auto& r : p.runs) {
+            auto rf = resolver.resolve_run(p, r);
+            std::cout << "    run " << r.run_id << " \"" << r.text << "\": "
+                       << rf.font.family << " " << rf.size_pt << "pt"
+                       << (rf.bold ? " bold" : "")
+                       << (rf.italic ? " italic" : "")
+                       << "\n";
+        }
+    }
+
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     std::vector<std::string> args(argv + 1, argv + argc);
     if (args.empty()) {
-        std::cerr << "usage: idoc_cli <create|dump|verify> [args...]\n";
+        std::cerr << "usage: idoc_cli <create|dump|verify|resolve> [args...]\n";
         return 1;
     }
 
@@ -611,6 +684,7 @@ int main(int argc, char** argv) {
         if (cmd == "create") return cmd_create(rest);
         if (cmd == "dump") return cmd_dump(rest);
         if (cmd == "verify") return cmd_verify(rest);
+        if (cmd == "resolve") return cmd_resolve(rest);
         std::cerr << "unknown command: " << cmd << "\n";
         return 1;
     } catch (const std::exception& e) {

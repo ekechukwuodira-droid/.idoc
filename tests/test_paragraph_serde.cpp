@@ -176,6 +176,35 @@ TEST_CASE("paragraph serde: an unrecognized underline value round-trips untouche
     CHECK(dc2.paragraphs[0].runs[0].direct_props->underline.value() == 200);
 }
 
+TEST_CASE("paragraph serde: ParagraphProperties distinguishes unset from explicitly-false") {
+    // This is the whole point of making every field optional (see the
+    // ARCHITECTURE NOTE in model/paragraph.hpp): "not set, fall through
+    // to the style chain" and "explicitly set to false at this level"
+    // must be distinguishable, or resolution can't work correctly.
+    model::ParagraphProperties explicit_false;
+    explicit_false.keep_with_next = false; // explicitly chosen
+
+    model::ParagraphProperties unset;
+    // keep_with_next deliberately never touched
+
+    model::Paragraph p1;
+    p1.paragraph_id = "p1";
+    p1.direct_props = explicit_false;
+    model::Paragraph p2;
+    p2.paragraph_id = "p2";
+    p2.direct_props = unset;
+
+    model::DocumentContent dc;
+    dc.paragraphs = {p1, p2};
+
+    auto payload = serde::serialize_document_content(dc);
+    auto dc2 = serde::deserialize_document_content(payload);
+
+    REQUIRE(dc2.paragraphs[0].direct_props->keep_with_next.has_value());
+    CHECK(dc2.paragraphs[0].direct_props->keep_with_next.value() == false);
+    CHECK_FALSE(dc2.paragraphs[1].direct_props->keep_with_next.has_value());
+}
+
 TEST_CASE("paragraph serde: empty document content round-trips") {
     model::DocumentContent dc;
     auto payload = serde::serialize_document_content(dc);

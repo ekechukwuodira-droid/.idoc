@@ -25,3 +25,22 @@ jobs:
       - name: Test
         working-directory: build
         run: ctest -C Release --output-on-failure
+
+      - name: Package idoc_cli for download
+        shell: bash
+        run: |
+          mkdir -p dist
+          BIN=$(find build -type f \( -iname "idoc_cli" -o -iname "idoc_cli.exe" \) | head -n 1)
+          if [ -z "$BIN" ]; then
+            echo "idoc_cli binary not found under build/" >&2
+            exit 1
+          fi
+          echo "Packaging: $BIN"
+          cp "$BIN" dist/
+
+      - name: Upload idoc_cli artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: idoc_cli-${{ matrix.os }}
+          path: dist/
+          if-no-files-found: error

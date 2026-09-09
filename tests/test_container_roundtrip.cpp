@@ -14,6 +14,7 @@
 #include "idoc/serde/resources_serde.hpp"
 #include "idoc/serde/preserved_unknown_serde.hpp"
 #include "idoc/serde/layout_cache_serde.hpp"
+#include "idoc/resolve/style_resolver.hpp"
 #include "idoc/model/numbering.hpp"
 #include "idoc/model/paragraph.hpp"
 #include "idoc/model/sections.hpp"
@@ -582,4 +583,72 @@ TEST_CASE("container: Section.content ContentRefs resolve against Document Conte
     const model::Paragraph* resolved3 = find_paragraph(refs[2].content_id);
     REQUIRE(resolved3 != nullptr);
     CHECK(resolved3->runs[0].text == "It was a dark and stormy night.");
+}
+
+TEST_CASE("container: StyleResolver resolves formatting from Styles + Document Content read back from bytes") {
+    // Proves the whole resolution cascade -- not just that models
+    // round-trip, but that a real StyleResolver built from a
+    // deserialized Styles block produces correct resolved formatting
+    // for paragraphs/runs deserialized from a separate block.
+    ContainerWriter writer;
+    writer.set_document_id("resolver-integration-doc");
+
+    model::Styles styles;
+    model::StyleDefinition normal;
+    normal.style_id = "Normal";
+    normal.display_name = "Normal";
+    normal.type = model::StyleType::kParagraph;
+    normal.is_default = true;
+    model::ParagraphProperties normal_props;
+    normal_props.alignment = model::Alignment::kJustify;
+    normal.paragraph_props = normal_props;
+    model::RunProperties normal_run_props;
+    normal_run_props.font = model::FontRef{"Calibri", std::nullopt};
+    normal_run_props.size_pt = 11.0f;
+    normal.run_props = normal_run_props;
+    styles.definitions.push_back(normal);
+
+    model::StyleDefinition heading1;
+    heading1.style_id = "Heading1";
+    heading1.display_name = "Heading 1";
+    heading1.type = model::StyleType::kParagraph;
+    heading1.based_on = "Normal";
+    model::RunProperties heading1_run_props;
+    heading1_run_props.bold = true;
+    heading1_run_props.size_pt = 18.0f;
+    heading1.run_props = heading1_run_props;
+    styles.definitions.push_back(heading1);
+
+    writer.add_block(block_type::kStyles, "styles", serde::kStylesSchemaVersion,
+                      serde::serialize_styles(styles));
+
+    model::DocumentContent content;
+    model::Paragraph p;
+    p.paragraph_id = "para-1";
+    p.style_id = "Heading1";
+    model::Run r;
+    r.run_id = "run-1";
+    r.text = "Chapter One";
+    p.runs.push_back(r);
+    content.paragraphs.push_back(p);
+    writer.add_block(block_type::kDocumentContent, "content", serde::kParagraphsSchemaVersion,
+                      serde::serialize_document_content(content));
+
+    auto file_bytes = writer.build();
+    auto reader = ContainerReader::open(file_bytes);
+
+    auto styles2 = serde::deserialize_styles(*reader.read_block(block_type::kStyles));
+    auto content2 = serde::deserialize_document_content(*reader.read_block(block_type::kDocumentContent));
+
+    idoc::resolve::StyleResolver resolver(styles2);
+    const auto& resolved_para = content2.paragraphs[0];
+
+    auto pf = resolver.resolve_paragraph(resolved_para);
+    // Heading1 sets no alignment of its own -- must fall through to Normal's Justify.
+    CHECK(pf.alignment == model::Alignment::kJustify);
+
+    auto rf = resolver.resolve_run(resolved_para, resolved_para.runs[0]);
+    CHECK(rf.bold == true);                          // from Heading1 directly
+    CHECK(rf.size_pt == doctest::Approx(18.0f));      // from Heading1 directly
+    CHECK(rf.font.family == "Calibri");               // fell through to Normal's run_props
 }

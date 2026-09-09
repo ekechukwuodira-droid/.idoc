@@ -9,18 +9,6 @@ namespace record_type {
 constexpr uint32_t kParagraph = 1; // only repeated record type at the block's top level
 } // namespace record_type
 
-namespace para_props_field {
-constexpr uint32_t kAlignment = 1;
-constexpr uint32_t kIndent = 2;
-constexpr uint32_t kSpacing = 3;
-constexpr uint32_t kKeepWithNext = 4;
-constexpr uint32_t kKeepLinesTogether = 5;
-constexpr uint32_t kPageBreakBefore = 6;
-constexpr uint32_t kBordersRaw = 7;   // reserved, see model/paragraph.hpp
-constexpr uint32_t kShadingRaw = 8;   // reserved
-constexpr uint32_t kTabStopsRaw = 9;  // reserved
-} // namespace para_props_field
-
 namespace run_field {
 constexpr uint32_t kRunId = 1;
 constexpr uint32_t kText = 2;
@@ -39,76 +27,6 @@ constexpr uint32_t kRun = 5; // repeated
 } // namespace paragraph_field
 
 namespace {
-
-std::vector<uint8_t> encode_paragraph_properties(const model::ParagraphProperties& pp) {
-    std::vector<uint8_t> out;
-
-    tlv::write_record(out, para_props_field::kAlignment, kParagraphsSchemaVersion,
-                       std::vector<uint8_t>{static_cast<uint8_t>(pp.alignment)});
-    tlv::write_record(out, para_props_field::kIndent, kParagraphsSchemaVersion,
-                       common::encode_indent(pp.indent));
-    tlv::write_record(out, para_props_field::kSpacing, kParagraphsSchemaVersion,
-                       common::encode_spacing(pp.spacing));
-    tlv::write_record(out, para_props_field::kKeepWithNext, kParagraphsSchemaVersion,
-                       std::vector<uint8_t>{static_cast<uint8_t>(pp.keep_with_next ? 1 : 0)});
-    tlv::write_record(out, para_props_field::kKeepLinesTogether, kParagraphsSchemaVersion,
-                       std::vector<uint8_t>{static_cast<uint8_t>(pp.keep_lines_together ? 1 : 0)});
-    tlv::write_record(out, para_props_field::kPageBreakBefore, kParagraphsSchemaVersion,
-                       std::vector<uint8_t>{static_cast<uint8_t>(pp.page_break_before ? 1 : 0)});
-
-    if (pp.borders_raw.has_value()) {
-        tlv::write_record(out, para_props_field::kBordersRaw, kParagraphsSchemaVersion, *pp.borders_raw);
-    }
-    if (pp.shading_raw.has_value()) {
-        tlv::write_record(out, para_props_field::kShadingRaw, kParagraphsSchemaVersion, *pp.shading_raw);
-    }
-    if (pp.tab_stops_raw.has_value()) {
-        tlv::write_record(out, para_props_field::kTabStopsRaw, kParagraphsSchemaVersion, *pp.tab_stops_raw);
-    }
-
-    return out;
-}
-
-model::ParagraphProperties decode_paragraph_properties(const std::vector<uint8_t>& payload) {
-    model::ParagraphProperties pp;
-    auto records = tlv::parse_records(payload);
-
-    for (const auto& rec : records) {
-        byteorder::Reader r(rec.payload);
-        switch (rec.header.type_id) {
-            case para_props_field::kAlignment:
-                pp.alignment = static_cast<model::Alignment>(r.read_u8());
-                break;
-            case para_props_field::kIndent:
-                pp.indent = common::decode_indent(rec.payload);
-                break;
-            case para_props_field::kSpacing:
-                pp.spacing = common::decode_spacing(rec.payload);
-                break;
-            case para_props_field::kKeepWithNext:
-                pp.keep_with_next = r.read_u8() != 0;
-                break;
-            case para_props_field::kKeepLinesTogether:
-                pp.keep_lines_together = r.read_u8() != 0;
-                break;
-            case para_props_field::kPageBreakBefore:
-                pp.page_break_before = r.read_u8() != 0;
-                break;
-            case para_props_field::kBordersRaw:
-                pp.borders_raw = rec.payload;
-                break;
-            case para_props_field::kShadingRaw:
-                pp.shading_raw = rec.payload;
-                break;
-            case para_props_field::kTabStopsRaw:
-                pp.tab_stops_raw = rec.payload;
-                break;
-            default:
-                break; // unknown field: skip
-        }
-    }
-    return pp;
-}
 
 std::vector<uint8_t> encode_run(const model::Run& run) {
     std::vector<uint8_t> out;
@@ -202,7 +120,7 @@ std::vector<uint8_t> encode_paragraph(const model::Paragraph& para) {
     }
     if (para.direct_props.has_value()) {
         tlv::write_record(out, paragraph_field::kDirectProps, kParagraphsSchemaVersion,
-                           encode_paragraph_properties(*para.direct_props));
+                           common::encode_paragraph_properties(*para.direct_props, kParagraphsSchemaVersion));
     }
     if (para.list_ref.has_value()) {
         std::vector<uint8_t> p;
@@ -231,7 +149,7 @@ model::Paragraph decode_paragraph(const std::vector<uint8_t>& payload) {
                 para.style_id = r.read_string();
                 break;
             case paragraph_field::kDirectProps:
-                para.direct_props = decode_paragraph_properties(rec.payload);
+                para.direct_props = common::decode_paragraph_properties(rec.payload);
                 break;
             case paragraph_field::kListRef: {
                 model::ListRef lr;

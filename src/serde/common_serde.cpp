@@ -21,6 +21,19 @@ constexpr uint32_t kSmallCaps = 12;
 constexpr uint32_t kAllCaps = 13;
 } // namespace run_props_field
 
+namespace para_props_field {
+// Fields nested within a ParagraphProperties record's payload.
+constexpr uint32_t kAlignment = 1;
+constexpr uint32_t kIndent = 2;
+constexpr uint32_t kSpacing = 3;
+constexpr uint32_t kKeepWithNext = 4;
+constexpr uint32_t kKeepLinesTogether = 5;
+constexpr uint32_t kPageBreakBefore = 6;
+constexpr uint32_t kBordersRaw = 7;   // reserved, see model/paragraph.hpp
+constexpr uint32_t kShadingRaw = 8;   // reserved
+constexpr uint32_t kTabStopsRaw = 9;  // reserved
+} // namespace para_props_field
+
 std::vector<uint8_t> encode_color(const model::Color& c) {
     std::vector<uint8_t> out;
     byteorder::write_u8(out, c.r);
@@ -273,6 +286,85 @@ std::vector<model::ContentRef> decode_content_refs(const std::vector<uint8_t>& p
         refs.push_back(decode_content_ref(rec.payload));
     }
     return refs;
+}
+
+std::vector<uint8_t> encode_paragraph_properties(const model::ParagraphProperties& pp, uint16_t schema_version) {
+    std::vector<uint8_t> out;
+
+    if (pp.alignment.has_value()) {
+        tlv::write_record(out, para_props_field::kAlignment, schema_version,
+                           std::vector<uint8_t>{static_cast<uint8_t>(*pp.alignment)});
+    }
+    if (pp.indent.has_value()) {
+        tlv::write_record(out, para_props_field::kIndent, schema_version, encode_indent(*pp.indent));
+    }
+    if (pp.spacing.has_value()) {
+        tlv::write_record(out, para_props_field::kSpacing, schema_version, encode_spacing(*pp.spacing));
+    }
+    if (pp.keep_with_next.has_value()) {
+        tlv::write_record(out, para_props_field::kKeepWithNext, schema_version,
+                           std::vector<uint8_t>{static_cast<uint8_t>(*pp.keep_with_next ? 1 : 0)});
+    }
+    if (pp.keep_lines_together.has_value()) {
+        tlv::write_record(out, para_props_field::kKeepLinesTogether, schema_version,
+                           std::vector<uint8_t>{static_cast<uint8_t>(*pp.keep_lines_together ? 1 : 0)});
+    }
+    if (pp.page_break_before.has_value()) {
+        tlv::write_record(out, para_props_field::kPageBreakBefore, schema_version,
+                           std::vector<uint8_t>{static_cast<uint8_t>(*pp.page_break_before ? 1 : 0)});
+    }
+    if (pp.borders_raw.has_value()) {
+        tlv::write_record(out, para_props_field::kBordersRaw, schema_version, *pp.borders_raw);
+    }
+    if (pp.shading_raw.has_value()) {
+        tlv::write_record(out, para_props_field::kShadingRaw, schema_version, *pp.shading_raw);
+    }
+    if (pp.tab_stops_raw.has_value()) {
+        tlv::write_record(out, para_props_field::kTabStopsRaw, schema_version, *pp.tab_stops_raw);
+    }
+
+    return out;
+}
+
+model::ParagraphProperties decode_paragraph_properties(const std::vector<uint8_t>& payload) {
+    model::ParagraphProperties pp;
+    auto records = tlv::parse_records(payload);
+
+    for (const auto& rec : records) {
+        byteorder::Reader r(rec.payload);
+        switch (rec.header.type_id) {
+            case para_props_field::kAlignment:
+                pp.alignment = static_cast<model::Alignment>(r.read_u8());
+                break;
+            case para_props_field::kIndent:
+                pp.indent = decode_indent(rec.payload);
+                break;
+            case para_props_field::kSpacing:
+                pp.spacing = decode_spacing(rec.payload);
+                break;
+            case para_props_field::kKeepWithNext:
+                pp.keep_with_next = r.read_u8() != 0;
+                break;
+            case para_props_field::kKeepLinesTogether:
+                pp.keep_lines_together = r.read_u8() != 0;
+                break;
+            case para_props_field::kPageBreakBefore:
+                pp.page_break_before = r.read_u8() != 0;
+                break;
+            case para_props_field::kBordersRaw:
+                pp.borders_raw = rec.payload;
+                break;
+            case para_props_field::kShadingRaw:
+                pp.shading_raw = rec.payload;
+                break;
+            case para_props_field::kTabStopsRaw:
+                pp.tab_stops_raw = rec.payload;
+                break;
+            default:
+                break; // unknown field: skip
+        }
+    }
+    return pp;
 }
 
 } // namespace idoc::serde::common

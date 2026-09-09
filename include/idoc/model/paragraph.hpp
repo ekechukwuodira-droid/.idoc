@@ -1,6 +1,17 @@
 #pragma once
 // Paragraphs & Runs — §6. Pure data, no I/O.
 //
+// ARCHITECTURE NOTE: `ParagraphProperties`' fields are all `optional<T>`,
+// not plain `T` with a default value. This matters for the style
+// resolver (resolve/style_resolver.hpp): resolution needs to distinguish
+// "this level explicitly sets alignment to Left" from "this level says
+// nothing about alignment, keep looking up the chain." A plain
+// `Alignment alignment = kLeft` can't represent that distinction --
+// every level would look like it explicitly chose Left. `RunProperties`
+// already got this right from the start (below); this file originally
+// didn't, and was corrected once the resolver needed real cascading
+// semantics rather than just round-tripping a single level's values.
+//
 // DEFERRED (matching the spec's own "Open Questions" deferral of these
 // exact three types as "low-risk, mechanical"): ParagraphProperties'
 // `borders`, `shading`, and `tab_stops` are reserved-but-empty optional
@@ -73,12 +84,12 @@ struct Spacing {
 };
 
 struct ParagraphProperties {
-    Alignment alignment = Alignment::kLeft;
-    Indent indent;
-    Spacing spacing;
-    bool keep_with_next = false;
-    bool keep_lines_together = false;
-    bool page_break_before = false;
+    std::optional<Alignment> alignment;
+    std::optional<Indent> indent;
+    std::optional<Spacing> spacing;
+    std::optional<bool> keep_with_next;
+    std::optional<bool> keep_lines_together;
+    std::optional<bool> page_break_before;
 
     // Reserved -- see DEFERRED note above.
     std::optional<std::vector<uint8_t>> borders_raw;

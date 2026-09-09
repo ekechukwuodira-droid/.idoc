@@ -1,6 +1,7 @@
 #include "idoc/serde/styles_serde.hpp"
 #include "idoc/container/tlv.hpp"
 #include "idoc/container/byteorder.hpp"
+#include "idoc/serde/common_serde.hpp"
 
 #include <stdexcept>
 
@@ -20,8 +21,8 @@ constexpr uint32_t kBasedOn = 4;
 constexpr uint32_t kNextStyle = 5;
 constexpr uint32_t kIsDefault = 6;
 constexpr uint32_t kQuickStyle = 7;
-constexpr uint32_t kParagraphPropsRaw = 8; // reserved, always absent until §6 exists
-constexpr uint32_t kRunPropsRaw = 9;       // reserved, always absent until §6 exists
+constexpr uint32_t kParagraphProps = 8; // was raw bytes; now real ParagraphProperties (§6)
+constexpr uint32_t kRunProps = 9;       // was raw bytes; now real RunProperties (§6)
 } // namespace field
 
 namespace {
@@ -52,11 +53,13 @@ std::vector<uint8_t> encode_style_definition(const model::StyleDefinition& s) {
     tlv::write_record(out, field::kQuickStyle, kStylesSchemaVersion,
                        [&] { std::vector<uint8_t> p; byteorder::write_u8(p, s.quick_style ? 1 : 0); return p; }());
 
-    if (s.paragraph_props_raw.has_value()) {
-        tlv::write_record(out, field::kParagraphPropsRaw, kStylesSchemaVersion, *s.paragraph_props_raw);
+    if (s.paragraph_props.has_value()) {
+        tlv::write_record(out, field::kParagraphProps, kStylesSchemaVersion,
+                           common::encode_paragraph_properties(*s.paragraph_props, kStylesSchemaVersion));
     }
-    if (s.run_props_raw.has_value()) {
-        tlv::write_record(out, field::kRunPropsRaw, kStylesSchemaVersion, *s.run_props_raw);
+    if (s.run_props.has_value()) {
+        tlv::write_record(out, field::kRunProps, kStylesSchemaVersion,
+                           common::encode_run_properties(*s.run_props, kStylesSchemaVersion));
     }
 
     return out;
@@ -95,11 +98,11 @@ model::StyleDefinition decode_style_definition(const std::vector<uint8_t>& paylo
             case field::kQuickStyle:
                 s.quick_style = r.read_u8() != 0;
                 break;
-            case field::kParagraphPropsRaw:
-                s.paragraph_props_raw = rec.payload;
+            case field::kParagraphProps:
+                s.paragraph_props = common::decode_paragraph_properties(rec.payload);
                 break;
-            case field::kRunPropsRaw:
-                s.run_props_raw = rec.payload;
+            case field::kRunProps:
+                s.run_props = common::decode_run_properties(rec.payload);
                 break;
             default:
                 break; // unknown field: skip

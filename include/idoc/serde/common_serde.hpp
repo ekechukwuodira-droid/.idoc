@@ -39,6 +39,12 @@ model::Spacing decode_spacing(const std::vector<uint8_t>& payload);
 std::vector<uint8_t> encode_run_properties(const model::RunProperties& rp, uint16_t schema_version);
 model::RunProperties decode_run_properties(const std::vector<uint8_t>& payload);
 
+// Same treatment for ParagraphProperties -- needed by both Paragraphs
+// (§6, direct formatting) and Styles (§4, StyleDefinition.paragraph_props)
+// once the style resolver needed real style-level properties to walk.
+std::vector<uint8_t> encode_paragraph_properties(const model::ParagraphProperties& pp, uint16_t schema_version);
+model::ParagraphProperties decode_paragraph_properties(const std::vector<uint8_t>& payload);
+
 // Shared with §8's PageNumberFieldPayload.restart_rule ("shared enum with
 // §7's numbering restart" per the spec).
 std::vector<uint8_t> encode_restart_rule(const model::RestartRule& rr);

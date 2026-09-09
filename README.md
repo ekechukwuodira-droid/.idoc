@@ -11,28 +11,54 @@ processor) layers on top of later — nothing here depends on Qt.
 - **Container** (`idoc_core`): `FileHeader`, `Manifest` (JSON), binary
   `BlockDirectory`, recursive TLV record encode/decode, per-block zstd
   compression, whole-file trailing CRC64 checksum.
+- **Resolve** (new layer, `resolve/style_resolver.hpp`): the style
+  resolver — walks direct formatting → style chain (`based_on`) → doc
+  default → engine default, per-field (not per-object), with cycle and
+  dangling-reference safety. Proven working end-to-end against real
+  serialized data via the CLI's `resolve` command and a container
+  integration test.
 - **Model**: `Metadata`, `Theme`, `Styles`, `Sections`, `Paragraph`/`Run`,
-  `NumberingDefinitions`, `Fields`, `Tables` (as before), plus
-  `FootnotesEndnotes`/`Comments`/`BookmarksHyperlinks` (§10, three
-  physical blocks) and `ResourceIndex` (§11 — metadata only; see
-  "Deferred" below), `PreservedUnknown` (§12 — the DOCX-safety
-  mechanism), and `LayoutCache` (§13 — derived, never authoritative).
-  **All fourteen of the spec's container blocks now exist.**
+  `NumberingDefinitions`, `Fields`, `Tables`, `FootnotesEndnotes`/
+  `Comments`/`BookmarksHyperlinks`, `ResourceIndex`, `PreservedUnknown`,
+  `LayoutCache`, plus the shared `ContentRef` reference type. All 14
+  container blocks exist and round-trip; the `Block[]` reference format
+  is resolved.
+  **Architecture correction this stage:** `ParagraphProperties`'s fields
+  are now `optional<T>` (were plain `T` with a default), matching
+  `RunProperties`'s existing pattern — needed so resolution can tell
+  "explicitly set to X" from "not set, keep looking up the chain."
+  **Loop closed:** `StyleDefinition.paragraph_props`/`run_props` are now
+  real `ParagraphProperties`/`RunProperties` (were reserved raw bytes) —
+  this is what the resolver actually walks.
 - **Serde**: all fourteen blocks map to/from their TLV block with the
-  same skip-unknown forward-compatibility pattern. `Size2D` encode/decode
-  moved into `common_serde` alongside everything else once
-  `ResourceEntry.natural_size` needed it.
-- **CLI** (`idoc_cli`): `create --with-defaults` now writes a full
-  fourteen-block document; `dump` decodes and prints all fourteen.
-- **Tests** (`idoc_tests`, doctest via CTest, 123 cases / 380 assertions):
-  every block's round-trip and forward-compatibility case, plus container
-  tests up to a realistic fourteen-block document.
-- **CI**: green on Ubuntu, macOS, and Windows. Fixed a real cross-platform
-  bug along the way — `doctest`'s own `CMakeLists.txt` requires a CMake
-  compatibility floor below 3.5, which modern CMake (bundled on GitHub's
-  macOS/Windows runner images) refuses outright. Fixed via
-  `CMAKE_POLICY_VERSION_MINIMUM`, set globally in our own CMakeLists so
-  local builds on a recent CMake get the same fix.
+  same skip-unknown forward-compatibility pattern. `ParagraphProperties`
+  encode/decode moved into `common_serde` alongside `RunProperties`,
+  since `Styles` now needs the same logic `Paragraphs` already had.
+- **CLI** (`idoc_cli`): `create --with-defaults` writes a full
+  fourteen-block document with real style-level formatting (Heading1
+  bold/16pt, based on Normal's Calibri/11pt); `dump` decodes all
+  fourteen; new **`resolve`** command prints every paragraph's and run's
+  fully-resolved formatting, demonstrating the cascade on real data:
+  ```
+  [para-1] style=Heading1 -> alignment=left, keep_with_next=true, spacing_before=480
+      run run-1 "The War of Ash and Iron": Calibri 16pt bold
+  [para-2] style=Normal -> alignment=left, keep_with_next=false, spacing_before=0
+      run run-2 "In the shadow...": Calibri 11pt
+  ```
+  (`para-1`'s alignment and `run-1`'s font both fell through the
+  `Heading1 → Normal` chain; everything else came from the nearer level.)
+- **Tests** (`idoc_tests`, doctest via CTest, 144 cases / 439 assertions):
+  every block's round-trip and forward-compatibility case, container
+  tests up to a realistic fourteen-block document, and a dedicated style
+  resolver suite covering priority order, multi-level chains, cycle
+  safety, dangling references, and default-style fallback.
+- **CI**: green on Ubuntu, macOS, and Windows, with a downloadable
+  `idoc_cli` binary artifact uploaded per OS on every run. Fixed a real
+  cross-platform bug along the way — `doctest`'s own `CMakeLists.txt`
+  requires a CMake compatibility floor below 3.5, which modern CMake
+  (bundled on GitHub's macOS/Windows runner images) refuses outright.
+  Fixed via `CMAKE_POLICY_VERSION_MINIMUM`, set globally in our own
+  CMakeLists so local builds on a recent CMake get the same fix.
 
 ## Two things flagged, not silently resolved
 
@@ -162,10 +188,11 @@ processor) layers on top of later — nothing here depends on Qt.
   produces a dense file
 - Salvage/degraded-open mode (`§15`) — `ContainerReader::open()` throws on
   any structural problem rather than attempting partial recovery
-- Style resolver, numbering *resolution*, fields *computation* (walking
-  the models to actually compute a page number or TOC entry), the actual
+- Numbering *resolution*, fields *computation* (walking the models to
+  actually compute a page number or TOC entry), the actual
   layout/pagination engine that would populate `LayoutCache` — real
-  engineering work built on top of what exists now
+  engineering work built on top of what exists now (the style resolver
+  is done — see `resolve/style_resolver.hpp`)
 
 ## One spec discrepancy, flagged not silently resolved
 
@@ -210,6 +237,10 @@ ctest --test-dir build -C Release --output-on-failure
 # Inspect it — prints the manifest JSON and decoded metadata/theme/styles
 ./build/idoc_cli dump test.idoc
 
+# Print every paragraph's and run's fully-resolved formatting (style
+# resolver: direct formatting -> style chain -> doc default -> engine default)
+./build/idoc_cli resolve test.idoc
+
 # Verify structural integrity (checksum + parse) without printing content
 ./build/idoc_cli verify test.idoc
 ```
@@ -219,6 +250,7 @@ PowerShell equivalents:
 ```powershell
 .\build\idoc_cli.exe create --output test.idoc --title "The War of Ash and Iron" --author "Mystic" --with-defaults
 .\build\idoc_cli.exe dump test.idoc
+.\build\idoc_cli.exe resolve test.idoc
 .\build\idoc_cli.exe verify test.idoc
 ```
 
@@ -228,6 +260,13 @@ PowerShell equivalents:
 Windows, and macOS on every push/PR. Push this repo to GitHub and it runs
 automatically — no configuration needed.
 
+Each run also uploads the built `idoc_cli` binary as a downloadable
+artifact (one per OS: `idoc_cli-ubuntu-latest`, `idoc_cli-windows-latest`,
+`idoc_cli-macos-latest`) — find them at the bottom of a run's summary
+page on the Actions tab. Download the one matching your OS, `chmod +x`
+it on Linux/macOS if needed, and run `create`/`dump`/`resolve`/`verify`
+directly without building anything locally.
+
 ## Project layout
 
 ```
@@ -235,34 +274,34 @@ include/idoc/           public headers
   container/             FileHeader, Manifest, BlockDirectory, TLV, compression, block type IDs
   model/                 all 14 blocks' pure data types (Metadata through LayoutCache), plus content_ref.hpp
   serde/                 per-block TLV mapping, plus common_serde for shared primitives
-    common_serde.hpp       Color, FontRef, Indent, Spacing, Size2D, RunProperties, RestartRule, ContentRef
+    common_serde.hpp       Color, FontRef, Indent, Spacing, Size2D, RunProperties, ParagraphProperties, RestartRule, ContentRef
+  resolve/                style_resolver.hpp -- direct formatting -> style chain -> doc default -> engine default
 src/                     implementation, mirrors include/idoc/ layout
-cli/main.cpp             idoc_cli: create / dump / verify
+cli/main.cpp             idoc_cli: create / dump / verify / resolve
 tests/                   doctest suite, one file per concern
-.github/workflows/ci.yml
+.github/workflows/ci.yml  builds, tests, and uploads an idoc_cli binary per OS
 ```
 
 ## Next stage
 
-**All 14 of the spec's container blocks now exist and round-trip, and
-the `Block[]` content-reference question is resolved** — `Section.content`,
-`HeaderFooterContent.content`, `Cell.content`, `Note.content`,
-`Comment.content`, and `PageGeometry.content_block_refs` all use the
-same `ContentRef` format (`include/idoc/model/content_ref.hpp`), proven
-working end-to-end: the CLI resolves a Section's references against
-Document Content and prints real paragraph text, and a dedicated
-container test resolves a mixed paragraph/table reference list across
-separately-stored blocks. What remains is qualitatively different work:
+The style resolver is done and proven against real data. What's left,
+in the order it makes most sense to build:
 
-1. **Resource blob storage** — an actual read/write API on
-   `ContainerWriter`/`ContainerReader` for the resource area, which has
-   been reserved-but-empty since stage 1.
-2. **Migration framework** (§14) and **salvage mode** (§15) — the two
-   infrastructure pieces the spec describes but that aren't new blocks.
-3. Separately, and much larger: the **style resolver**, **numbering
-   resolution**, **fields computation**, and the **layout/pagination
-   engine itself** — the real word-processor rendering work this entire
-   container format exists to support.
+1. **Numbering resolution** — the same kind of pure-logic-over-models
+   work as the style resolver: given a `Paragraph.list_ref`, walk
+   `NumberingInstance` → `AbstractNum` → the right `LevelDefinition`,
+   apply `LevelOverride`s, and actually compute "1.", "a)", "iii." etc.
+   for a given position in a list, including restart rules.
+2. **Fields computation** — resolve a `Field`'s `cached_result` for real
+   (page numbers need the layout pass below to know what page something
+   lands on; simpler fields like `Date` don't).
+3. **The layout/pagination engine** — a fundamentally larger, separate
+   undertaking: real text shaping and font metrics (line breaking, page
+   breaking, widow/orphan control) means integrating something like
+   HarfBuzz/FreeType or a platform text layer, plus its own architecture
+   decisions (which library, what accuracy target, exact vs. approximate
+   pagination) that are worth settling before writing code, not during.
 
 Say which and I'll build it the same way: full files, tested, zipped,
-and pushed with notes.
+and pushed with notes — except the layout engine, which needs a scoping
+conversation first.

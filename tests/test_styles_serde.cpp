@@ -127,3 +127,108 @@ TEST_CASE("styles serde: unknown top-level record type is skipped, not fatal") {
     auto s2 = serde::deserialize_styles(payload);
     CHECK(s2.definitions.empty()); // the unknown record contributed nothing, didn't throw
 }
+
+TEST_CASE("styles serde: paragraph_props round-trips with real ParagraphProperties") {
+    model::StyleDefinition def;
+    def.style_id = "Heading1";
+    def.display_name = "Heading 1";
+    def.type = model::StyleType::kParagraph;
+
+    model::ParagraphProperties pp;
+    pp.alignment = model::Alignment::kLeft;
+    pp.spacing = model::Spacing{480, 240, 0, model::LineRule::kSingle};
+    pp.keep_with_next = true;
+    // indent, keep_lines_together, page_break_before deliberately left unset
+    def.paragraph_props = pp;
+
+    model::Styles s;
+    s.definitions = {def};
+
+    auto payload = serde::serialize_styles(s);
+    auto s2 = serde::deserialize_styles(payload);
+
+    REQUIRE(s2.definitions.size() == 1);
+    REQUIRE(s2.definitions[0].paragraph_props.has_value());
+    const auto& pp2 = s2.definitions[0].paragraph_props.value();
+    CHECK(pp2.alignment.value() == model::Alignment::kLeft);
+    CHECK(pp2.keep_with_next.value() == true);
+    CHECK_FALSE(pp2.indent.has_value());
+    CHECK_FALSE(pp2.keep_lines_together.has_value());
+    CHECK(s2 == s);
+}
+
+TEST_CASE("styles serde: run_props round-trips with real RunProperties") {
+    model::StyleDefinition def;
+    def.style_id = "Emphasis";
+    def.display_name = "Emphasis";
+    def.type = model::StyleType::kCharacter;
+
+    model::RunProperties rp;
+    rp.italic = true;
+    rp.font = model::FontRef{"Georgia", std::nullopt};
+    // bold, size_pt, color, etc. deliberately left unset
+    def.run_props = rp;
+
+    model::Styles s;
+    s.definitions = {def};
+
+    auto payload = serde::serialize_styles(s);
+    auto s2 = serde::deserialize_styles(payload);
+
+    REQUIRE(s2.definitions.size() == 1);
+    REQUIRE(s2.definitions[0].run_props.has_value());
+    const auto& rp2 = s2.definitions[0].run_props.value();
+    CHECK(rp2.italic.value() == true);
+    CHECK(rp2.font.value().family == "Georgia");
+    CHECK_FALSE(rp2.bold.has_value());
+    CHECK_FALSE(rp2.size_pt.has_value());
+}
+
+TEST_CASE("styles serde: paragraph_props and run_props absent round-trip as nullopt") {
+    model::StyleDefinition def;
+    def.style_id = "Normal";
+    def.display_name = "Normal";
+    def.type = model::StyleType::kParagraph;
+    // paragraph_props, run_props both deliberately left unset
+
+    model::Styles s;
+    s.definitions = {def};
+
+    auto payload = serde::serialize_styles(s);
+    auto s2 = serde::deserialize_styles(payload);
+
+    CHECK_FALSE(s2.definitions[0].paragraph_props.has_value());
+    CHECK_FALSE(s2.definitions[0].run_props.has_value());
+}
+
+TEST_CASE("styles serde: a style can carry both paragraph_props and run_props at once") {
+    // Real word processors do this: a paragraph style like "Heading 1"
+    // sets both paragraph-level formatting (spacing, keep_with_next) AND
+    // default character formatting for text typed in that style (bold,
+    // a larger size) at the same time.
+    model::StyleDefinition def;
+    def.style_id = "Heading1";
+    def.display_name = "Heading 1";
+    def.type = model::StyleType::kParagraph;
+
+    model::ParagraphProperties pp;
+    pp.keep_with_next = true;
+    def.paragraph_props = pp;
+
+    model::RunProperties rp;
+    rp.bold = true;
+    rp.size_pt = 16.0f;
+    def.run_props = rp;
+
+    model::Styles s;
+    s.definitions = {def};
+
+    auto payload = serde::serialize_styles(s);
+    auto s2 = serde::deserialize_styles(payload);
+
+    REQUIRE(s2.definitions[0].paragraph_props.has_value());
+    REQUIRE(s2.definitions[0].run_props.has_value());
+    CHECK(s2.definitions[0].paragraph_props->keep_with_next.value() == true);
+    CHECK(s2.definitions[0].run_props->bold.value() == true);
+    CHECK(s2.definitions[0].run_props->size_pt.value() == doctest::Approx(16.0f));
+}
