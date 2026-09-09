@@ -17,6 +17,22 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 
+# When idoc-engine is pulled in as a dependency of another project (e.g.
+# via FetchContent/add_subdirectory from a downstream app that just wants
+# the Qt-free idoc_core library), that project has no use for our own CLI
+# harness or doctest suite -- and pulling doctest into a downstream build
+# just to skip it is wasted configure time. Default both ON when this is
+# the top-level project (building idoc-engine standalone, as CI does) and
+# OFF when embedded, but always overridable by the parent via cache vars
+# set before add_subdirectory/FetchContent_MakeAvailable.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(IDOC_STANDALONE_DEFAULT ON)
+else()
+    set(IDOC_STANDALONE_DEFAULT OFF)
+endif()
+option(IDOC_BUILD_CLI "Build the idoc_cli test harness executable" ${IDOC_STANDALONE_DEFAULT})
+option(IDOC_BUILD_TESTS "Build the idoc_tests doctest suite" ${IDOC_STANDALONE_DEFAULT})
+
 include(FetchContent)
 
 # --- zstd (compression, §1.5) -------------------------------------------
@@ -43,12 +59,14 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(json)
 
 # --- doctest (tests) -----------------------------------------------------
+if(IDOC_BUILD_TESTS)
 FetchContent_Declare(
     doctest
     GIT_REPOSITORY https://github.com/doctest/doctest.git
     GIT_TAG v2.4.11
 )
 FetchContent_MakeAvailable(doctest)
+endif()
 
 # --- idoc_core: container + model + serde, Qt-free ----------------------
 add_library(idoc_core STATIC
@@ -84,10 +102,13 @@ target_link_libraries(idoc_core PUBLIC
 )
 
 # --- idoc_cli: the no-UI test harness ------------------------------------
+if(IDOC_BUILD_CLI)
 add_executable(idoc_cli cli/main.cpp)
 target_link_libraries(idoc_cli PRIVATE idoc_core)
+endif()
 
 # --- idoc_tests: doctest suite --------------------------------------------
+if(IDOC_BUILD_TESTS)
 enable_testing()
 add_executable(idoc_tests
     tests/test_main.cpp
@@ -119,3 +140,4 @@ if(DOCTEST_CMAKE_FOUND)
 else()
     add_test(NAME idoc_tests COMMAND idoc_tests)
 endif()
+endif() # IDOC_BUILD_TESTS
